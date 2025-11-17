@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Personal Goal Calendar</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <main id="app" class="page">
+        <h1 class="site-title">Goal Calendar</h1>
+        <p class="site-desc">A simple static view you can host on GitHub Pages. Each goal is driven by
+            <code>goals.json</code>. Click a tile to change score (0-10).</p>
+        <div id="goals"></div>
+    </main>
+
+    <template id="goal-card-template">
+        <article class="goal-card">
+            <header class="goal-header">
+                <div class="goal-info">
+                    <h2 class="goal-title"></h2>
+                    <div class="goal-sub">Count down: <span class="goal-countdown">--</span></div>
+                </div>
+                <div class="goal-stats">
+                    <div class="stat">Passed: <span class="days-past">0</span></div>
+                    <div class="stat">Left: <span class="days-left">0</span></div>
+                </div>
+            </header>
+
+            <div class="calendar-area">
+                <div class="months" aria-hidden="true"></div>
+                <div class="calendar">
+                    <!-- week columns are inserted here -->
+                </div>
+            </div>
+        </article>
+    </template>
+
+    <script src="script.js" type="module"></script>
+</body>
+
+</html>

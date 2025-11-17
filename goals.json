@@ -1,0 +1,17 @@
+[
+    {
+        "title": "This Month End",
+        "endDate": "2025-11-30T23:59:59",
+        "defaultScore": 2
+    },
+    {
+        "title": "This Year End",
+        "endDate": "2025-12-31T23:59:59",
+        "defaultScore": 3
+    },
+    {
+        "title": "Feb 11 2026",
+        "endDate": "2026-02-11T23:59:59",
+        "defaultScore": 4
+    }
+]
