@@ -80,6 +80,14 @@ body {
     margin: 0;
 }
 
+/* Emphasize countdown value */
+.goal-sub .goal-countdown {
+    font-size: 18px;
+    font-weight: 600;
+    color: #d4ffe9;
+    letter-spacing: .5px;
+}
+
 .goal-stats {
     display: flex;
     flex-direction: column;
@@ -88,6 +96,16 @@ body {
     color: #9fa3bb;
     text-align: right;
     white-space: nowrap;
+}
+
+/* Make numeric metric values larger */
+.goal-stats .stat span {
+    display: inline-block;
+    font-size: 18px;
+    font-weight: 600;
+    color: #c9ffe3;
+    min-width: 34px;
+    text-align: right;
 }
 
 .stat {
@@ -164,66 +182,86 @@ body {
     padding: 2px 6px;
 }
 
+/* highlight for the "Passed" number — defaults to a light green (can be overridden inline) */
+.days-past--highlight {
+    color: #9affce;
+    font-weight: 600;
+}
+
 .disabled {
     opacity: 0.5;
     cursor: default;
 }
 
-/* color ramp: 0-10 -> dark to bright green with better contrast */
+/* invisible placeholder to preserve grid spacing for out-of-range cells */
+.tile.spacer {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+/* color ramp: 0-10 -> GitHub-like green shades */
 .tile.c-0 {
-    background: #2a2f3e;
-    border: 1px solid #3a4050;
+    background: #0a1013;
+    /* very dark, near empty */
+    border: 1px solid #162228;
 }
 
 .tile.c-1 {
-    background: #1a4233;
-    border: 1px solid #245a42;
+    background: #0b3320;
+    border: 1px solid #13442a;
 }
 
 .tile.c-2 {
-    background: #1d6944;
-    border: 1px solid #268152;
+    background: #0e4429;
+    /* gh L1 */
+    border: 1px solid #145a33;
 }
 
 .tile.c-3 {
-    background: #1e8b56;
-    border: 1px solid #27a367;
+    background: #145a2f;
+    border: 1px solid #1b703c;
 }
 
 .tile.c-4 {
-    background: #1fac66;
-    border: 1px solid #28c477;
+    background: #1c7d3f;
+    border: 1px solid #238e49;
 }
 
 .tile.c-5 {
-    background: #22c978;
-    border: 1px solid #30e189;
+    background: #228a47;
+    border: 1px solid #2a9c52;
 }
 
 .tile.c-6 {
-    background: #2ee68a;
-    border: 1px solid #40ff9d;
+    background: #2a9f52;
+    border: 1px solid #31b35f;
 }
 
 .tile.c-7 {
-    background: #45ee9b;
-    border: 1px solid #55ffac;
+    background: #26a641;
+    /* gh L3 */
+    border: 1px solid #2fba55;
 }
 
 .tile.c-8 {
-    background: #5ff5ab;
-    border: 1px solid #70ffbc;
+    background: #31be58;
+    border: 1px solid #3ad06a;
 }
 
 .tile.c-9 {
-    background: #7dfabc;
-    border: 1px solid #8dffcc;
+    background: #39d353;
+    /* gh L4 */
+    border: 1px solid #54e06f;
 }
 
 .tile.c-10 {
-    background: #9affce;
-    border: 1px solid #aaffdd;
+    background: #46e06a;
+    /* slightly brighter */
+    border: 1px solid #63ea84;
 }
+
+/* defaulted past/today tiles use the same ramp (e.g., c-2) so
+    intensity/opacity matches the effective score; no special override */
 
 /* future days: lighter grey to stand out from background */
 .tile.future {

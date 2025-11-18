@@ -16,9 +16,13 @@ async function loadGoals() {
 }
 
 function toIso(date) {
+    // Build a local YYYY-MM-DD (no UTC shift) so keys match goals.json
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
-    return d.toISOString().slice(0, 10);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
 }
 
 function addDays(date, n) {
@@ -75,17 +79,25 @@ function calcDaysBetween(a, b) {
     return Math.round((+B - +A) / 86400000);
 }
 
-function createTileEl({ iso, score, inRange, isPastOrToday }) {
+function createTileEl({ iso, score, inRange, isPastOrToday, defaultScore, autoDefault }) {
     const d = document.createElement('div');
     const baseClass = 'tile';
-    const scoreClass = (inRange && isPastOrToday) ? scoreToClass(score) : 'future';
+    // If the day is in-range and past-or-today and score is null/NaN,
+    // treat it as the base default (2 unless overridden by goal.defaultScore)
+    // and map to the standard color ramp so intensity reflects that value.
+    const displayScore = (inRange && isPastOrToday) ? (Number.isNaN(score) ? (defaultScore ?? 2) : score) : score;
+    const scoreClass = (inRange && isPastOrToday) ? scoreToClass(displayScore) : 'future';
     d.className = `${baseClass} ${scoreClass}`;
     d.dataset.date = iso;
+    // only attach a numeric dataset.score when there is an actual stored numeric score
     d.dataset.score = (inRange && isPastOrToday && !Number.isNaN(score)) ? score : '';
     d.setAttribute('role', 'button');
-    d.setAttribute('aria-label', `${iso}${inRange ? ' score ' + (Number.isNaN(score) ? '0' : score) : ' (outside range)'}`);
+    d.setAttribute('aria-label', `${iso}${inRange ? ' score ' + (Number.isNaN(score) ? String(defaultScore ?? 2) + ' (default)' : score) : ' (outside range)'}`);
     if (!inRange) {
-        d.classList.add('disabled');
+        // hide out-of-range days but keep grid spacing
+        d.classList.remove('future');
+        d.classList.add('spacer');
+        d.setAttribute('aria-hidden', 'true');
     } else if (!isPastOrToday) {
         d.classList.add('disabled'); // visually grey & non-interactive
     } else {
@@ -133,16 +145,34 @@ function createGoalCard(goal) {
 
     title.textContent = goal.title;
 
+    // make the "Passed" counter visibly light-green by default
+    // allow override from goals.json: either `passedColor` (CSS color string)
+    // or `passedIntensity` (0..10) which maps to the same ramp used by tiles
+    daysPastEl.classList.add('days-past--highlight');
+    if (goal.passedColor) {
+        daysPastEl.style.color = goal.passedColor;
+    } else if (goal.passedIntensity !== undefined && Number.isFinite(Number(goal.passedIntensity))) {
+        const palette = ['#2a2f3e', '#1a4233', '#1d6944', '#1e8b56', '#1fac66', '#22c978', '#2ee68a', '#45ee9b', '#5ff5ab', '#7dfabc', '#9affce'];
+        const idx = clamp(Math.round(Number(goal.passedIntensity)), 0, 10);
+        daysPastEl.style.color = palette[idx];
+    }
+
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    const startDate = goal.startDate ? new Date(goal.startDate) : today;
+    // Start range: if not specified, begin at the 16th of the current month
+    // (e.g., November 16 this month).
+    const startDate = goal.startDate ? new Date(goal.startDate) : new Date(today.getFullYear(), today.getMonth(), 16);
     startDate.setHours(0, 0, 0, 0);
 
     const endDate = new Date(goal.endDate);
     endDate.setHours(0, 0, 0, 0);
 
-    const displayStart = startOfWeek(startDate);
+    // Week rows should run Sun–Sat. Start from the first Sunday ON or AFTER
+    // the chosen startDate (e.g., 2025-11-16 for a startDate of 2025-11-15).
+    const displayStart = (startDate.getDay() === 0)
+        ? startDate
+        : addDays(startDate, (7 - startDate.getDay()) % 7);
     const displayEnd = endOfWeek(endDate);
 
     // iterate days between displayStart..displayEnd
@@ -154,10 +184,8 @@ function createGoalCard(goal) {
     const tileSize = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--tile-size'));
     const gap = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--tile-gap'));
 
-    const storageKey = `goal-scores:${goal.title}`;
-    const localSaved = JSON.parse(localStorage.getItem(storageKey) || '{}');
     const jsonScores = parseJSONScores(goal.scores);
-    const saved = Object.assign({}, jsonScores, localSaved);
+    const saved = jsonScores; // no client-side persistence
 
     const tilesByDate = {};
     const weekData = []; // array of {scores: [n|NaN], dates: [iso]}
@@ -170,29 +198,22 @@ function createGoalCard(goal) {
         const isPastOrToday = d <= today;
 
         let score;
+        let autoDefault = false;
         if (saved[iso] !== undefined && saved[iso] !== null && !Number.isNaN(Number(saved[iso]))) {
             score = Number(saved[iso]);
         } else if (inRange && isPastOrToday) {
             score = goal.defaultScore ?? 2;
+            autoDefault = true; // visually mark as light green
         } else {
             score = NaN; // future or out-of-range
         }
 
-        tilesByDate[iso] = { date: new Date(d), iso, score, inRange };
+        tilesByDate[iso] = { date: new Date(d), iso, score, inRange, autoDefault };
     }
 
-    // if there were no localSaved entries, persist defaults for past/today only
-    const hasLocalSaved = Object.keys(localSaved).length > 0;
-    if (!hasLocalSaved) {
-        const toSave = Object.assign({}, saved);
-        Object.values(tilesByDate).forEach(td => {
-            const iso = td.iso;
-            if (td.inRange && td.date <= today && (toSave[iso] === undefined || toSave[iso] === null)) {
-                toSave[iso] = goal.defaultScore ?? 2;
-            }
-        });
-        localStorage.setItem(storageKey, JSON.stringify(toSave));
-    }
+    // Do not auto-persist defaults to localStorage. We keep past/today tiles
+    // visually logged (light green) and use default scores for averages, but
+    // only store values when the user explicitly clicks a tile.
 
     // rebuild weekData based on tilesByDate (only past/today contribute scores)
     for (let i = 0; i < dates.length; i++) {
@@ -230,7 +251,7 @@ function createGoalCard(goal) {
         const label = document.createElement('div');
         label.className = 'week-label';
         label.textContent = `${getWeekLabel(r + 1)} (${avgInit})`;
-        label.title = `Week ${r + 1} average (Sun-Sat): ${avgInit}`;
+        label.title = `Week ${r + 1} average: ${avgInit}`;
         label.addEventListener('mouseenter', () => {
             const wkScoresDQ = weekData[r].scores.filter(s => !Number.isNaN(s));
             const avgDQ = (wkScoresDQ.length ? (wkScoresDQ.reduce((a, b) => a + b, 0) / wkScoresDQ.length).toFixed(1) : '--');
@@ -241,14 +262,31 @@ function createGoalCard(goal) {
 
         for (let c = 0; c < 7; c++) {
             const iso = weekData[r].dates[c];
+            // If this slot is outside the date range (because we don't round
+            // the start to the week's Sunday), render an invisible spacer cell.
+            if (!iso) {
+                const empty = document.createElement('div');
+                empty.className = 'tile spacer';
+                empty.setAttribute('aria-hidden', 'true');
+                grid.appendChild(empty);
+                continue;
+            }
             const td = tilesByDate[iso];
             const isPastOrToday = td.date <= today;
-            const tileEl = createTileEl({ iso, score: td.score, inRange: td.inRange, isPastOrToday });
+            const tileEl = createTileEl({ iso, score: td.score, inRange: td.inRange, isPastOrToday, defaultScore: goal.defaultScore ?? 2, autoDefault: td.autoDefault });
+
+            // Skip wiring events for hidden out-of-range cells
+            if (!td.inRange) {
+                grid.appendChild(tileEl);
+                continue;
+            }
 
             tileEl.addEventListener('mouseenter', () => {
                 const wkScores = weekData[r].scores.filter(s => !Number.isNaN(s));
                 const weekAvg = (wkScores.length ? (wkScores.reduce((a, b) => a + b, 0) / wkScores.length).toFixed(1) : '--');
-                const scoreText = td.inRange && isPastOrToday ? `Score: ${td.score}` : (td.inRange ? 'Future day' : 'Outside range');
+                const displayScore = (td.inRange && isPastOrToday) ? (Number.isNaN(td.score) ? (goal.defaultScore ?? 2) : td.score) : td.score;
+                const isDefaultish = Number.isNaN(td.score) || td.autoDefault;
+                const scoreText = td.inRange && isPastOrToday ? `Score: ${displayScore}${isDefaultish ? ' (default)' : ''}` : (td.inRange ? 'Future day' : 'Outside range');
                 const html = `${iso} — ${scoreText} <div style="opacity:.8;font-size:11px;margin-top:3px">Week ${r + 1} • avg ${weekAvg}</div>`;
                 const rect = tileEl.getBoundingClientRect();
                 showTooltip(rect.left + rect.width / 2, rect.top - 8, html);
@@ -259,12 +297,8 @@ function createGoalCard(goal) {
                 if (!td.inRange || td.date > today) return; // disable future clicks
                 td.score = (Number.isNaN(td.score) ? (goal.defaultScore ?? 2) : td.score + 1);
                 if (td.score > 10) td.score = 0;
-                tileEl.className = `tile ${scoreToClass(td.score)}`;
+                tileEl.className = `tile ${scoreToClass(td.score)}`; // clicking makes it an explicit score
                 tileEl.dataset.score = td.score;
-                // persist
-                const stored = JSON.parse(localStorage.getItem(storageKey) || '{}');
-                stored[iso] = td.score;
-                localStorage.setItem(storageKey, JSON.stringify(stored));
                 // update week data and label average
                 const posIdx = weekData[r].dates.indexOf(iso);
                 if (posIdx !== -1) weekData[r].scores[posIdx] = td.score;
@@ -285,7 +319,10 @@ function createGoalCard(goal) {
     // stats & countdown
     function updateCounts() {
         const now = new Date();
-        const passedDays = Math.max(0, calcDaysBetween(startDate, now));
+        // count passed days as the number of in-range days up to today
+        // (treating unscored past days as implicitly logged/green for display)
+        const todayLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const passedDays = Object.values(tilesByDate).filter(td => td.inRange && td.date <= todayLocal).length;
         const leftDays = Math.max(0, calcDaysBetween(now, endDate));
         daysPastEl.textContent = passedDays;
         daysLeftEl.textContent = leftDays;
