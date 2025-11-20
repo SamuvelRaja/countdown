@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Restricted YouTube Player</title>
+		<style>
+			/* Basic page hardening */
+			html, body {
+				margin: 0;
+				padding: 0;
+				height: 100%;
+				background: #0b0b0b;
+				color: #eaeaea;
+				-webkit-user-select: none; /* Safari */
+				-moz-user-select: none;    /* Firefox */
+				-ms-user-select: none;     /* IE10+/Edge */
+				user-select: none;         /* Standard */
+				overflow: hidden;
+			}
+
+			.wrap {
+				height: 100%;
+				width: 100%;
+				display: grid;
+				place-items: center;
+			}
+
+			.player-shell {
+				position: relative;
+				width: min(92vw, 960px);
+				aspect-ratio: 16 / 9;
+				background: #000;
+				border-radius: 10px;
+				overflow: hidden;
+				box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+			}
+
+			/* The YouTube iframe will be injected here by the IFrame API */
+			#player {
+				position: absolute;
+				inset: 0;
+				width: 100%;
+				height: 100%;
+				pointer-events: none; /* Block direct interaction with the iframe */
+			}
+
+			/* Transparent overlay to intercept all interactions */
+			.overlay {
+				position: absolute;
+				inset: 0;
+				display: grid;
+				place-items: center;
+				background: transparent;
+				cursor: default;
+			}
+
+			.controls {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				padding: 10px 14px;
+				border-radius: 999px;
+				background: rgba(20,20,20,0.65);
+				backdrop-filter: blur(4px);
+				box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+			}
+
+			.btn {
+				appearance: none;
+				border: 0;
+				background: #eaeaea;
+				color: #111;
+				font-weight: 700;
+				border-radius: 999px;
+				padding: 10px 16px;
+				cursor: pointer;
+				transition: transform 120ms ease, background 120ms ease, color 120ms ease;
+			}
+			.btn.secondary {
+				background: #2a2a2a;
+				color: #eaeaea;
+			}
+			.btn:active { transform: scale(0.98); }
+			.btn:focus { outline: 2px solid #888; outline-offset: 2px; }
+
+			.hint {
+				position: absolute;
+				bottom: 10px;
+				left: 50%;
+				transform: translateX(-50%);
+				font-size: 12px;
+				color: #aaa;
+				opacity: 0.85;
+				pointer-events: none;
+			}
+
+			/* Prevent long-press context on touch */
+			* { -webkit-touch-callout: none; }
+		</style>
+	</head>
+	<body>
+		<div class="wrap">
+			<div class="player-shell" id="player-shell">
+				<div id="player" aria-hidden="true"></div>
+				<div class="overlay" id="overlay" role="region" aria-label="Video controls">
+					<div class="controls">
+						<button class="btn" id="playPauseBtn" type="button" aria-pressed="false">Play</button>
+						<button class="btn secondary" id="muteBtn" type="button" aria-pressed="true">Unmute</button>
+					</div>
+					<div class="hint">Right-click, selection, and default YouTube controls are disabled.</div>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			// Harden against typical copy attempts
+			document.addEventListener('contextmenu', (e) => e.preventDefault(), { passive: false });
+			document.addEventListener('copy', (e) => { e.preventDefault(); return false; });
+			document.addEventListener('cut', (e) => { e.preventDefault(); return false; });
+			document.addEventListener('dragstart', (e) => { e.preventDefault(); return false; });
+
+			// Basic key handling to avoid navigation or open-in-new behavior
+			document.addEventListener('keydown', (e) => {
+				// Block common open/fullscreen keys when focus is on page
+				const blocked = ['f', 'F', 'k', 'K', 'j', 'J', 'l', 'L', 'c', 'C'];
+				if (blocked.includes(e.key) || (e.ctrlKey && (e.key === 'c' || e.key === 'C'))) {
+					e.preventDefault();
+					e.stopPropagation();
+				}
+			}, true);
+
+			// Load YouTube IFrame API
+			const tag = document.createElement('script');
+			tag.src = 'https://www.youtube.com/iframe_api';
+			const firstScriptTag = document.getElementsByTagName('script')[0];
+			firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+			let player;
+			let isPlaying = false;
+			let isMuted = true; // start muted to be autoplay-friendly on some browsers
+
+			// YouTube API callback
+					function onYouTubeIframeAPIReady() {
+						// If opening this file directly (file://), origin isn't http(s) and must be omitted.
+						const YT_ORIGIN = (window.location && window.location.origin && /^https?:/.test(window.location.origin))
+							? window.location.origin
+							: undefined;
+
+						const playerVars = {
+							// Make copying URL harder by removing YouTube UI
+							controls: 0,
+							modestbranding: 1,
+							rel: 0,
+							fs: 0,
+							disablekb: 1,
+							iv_load_policy: 3,
+							playsinline: 1,
+							enablejsapi: 1
+						};
+						if (YT_ORIGIN) playerVars.origin = YT_ORIGIN;
+
+						player = new YT.Player('player', {
+							videoId: 'ehwpD5tbgLE',
+							playerVars,
+							events: {
+								onReady: onPlayerReady,
+								onStateChange: onPlayerStateChange
+							}
+						});
+					}
+			window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
+
+			function onPlayerReady() {
+				try { player.mute(); } catch (e) { /* ignore */ }
+				// Don't autoplay automatically; require a user gesture via our overlay
+			}
+
+			function onPlayerStateChange(ev) {
+				// Keep simple button states in sync
+				if (ev.data === YT.PlayerState.PLAYING) {
+					isPlaying = true;
+					document.getElementById('playPauseBtn').textContent = 'Pause';
+					document.getElementById('playPauseBtn').setAttribute('aria-pressed', 'true');
+				} else if (ev.data === YT.PlayerState.PAUSED || ev.data === YT.PlayerState.ENDED) {
+					isPlaying = false;
+					document.getElementById('playPauseBtn').textContent = 'Play';
+					document.getElementById('playPauseBtn').setAttribute('aria-pressed', 'false');
+				}
+			}
+
+			// UI wiring
+			const playPauseBtn = document.getElementById('playPauseBtn');
+			const muteBtn = document.getElementById('muteBtn');
+			const overlay = document.getElementById('overlay');
+
+			playPauseBtn.addEventListener('click', () => {
+				if (!player) return;
+				// The click is a user gesture, OK to start playback
+				try {
+					if (!isPlaying) {
+						player.playVideo();
+					} else {
+						player.pauseVideo();
+					}
+				} catch (_) {}
+			});
+
+			muteBtn.addEventListener('click', () => {
+				if (!player) return;
+				try {
+					if (isMuted) {
+						player.unMute();
+						muteBtn.textContent = 'Mute';
+						muteBtn.setAttribute('aria-pressed', 'false');
+					} else {
+						player.mute();
+						muteBtn.textContent = 'Unmute';
+						muteBtn.setAttribute('aria-pressed', 'true');
+					}
+					isMuted = !isMuted;
+				} catch (_) {}
+			});
+
+			// Swallow all clicks on the overlay to avoid any propagation to the iframe
+			overlay.addEventListener('click', (e) => {
+				// Only allow button clicks to do something
+				if (!(e.target === playPauseBtn || e.target === muteBtn)) {
+					e.preventDefault();
+					e.stopPropagation();
+				}
+			}, true);
+		</script>
+
+		<!--
+			Note on limitations:
+			This setup removes YouTube UI, blocks right-click, disables text selection and direct iframe interaction,
+			and uses a custom overlay so users can't click through to YouTube. However, the video still streams from
+			YouTube and a determined user can discover the URL via developer tools or network inspection. The goal here
+			is to prevent casual copying or direct URL viewing, not provide DRM.
+		-->
+	</body>
+	</html>
